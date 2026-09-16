@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agromind-vllm
+  namespace: agromind
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: agromind-vllm
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: agromind-vllm
+    spec:
+      containers:
+      - args:
+        - --model=Qwen/Qwen2.5-VL-7B-Instruct
+        - --trust-remote-code
+        - --dtype=bfloat16
+        - --max-model-len=4096
+        - --gpu-memory-utilization=0.85
+        env:
+        - name: VLLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              key: api-key
+              name: serving-keys
+        image: vllm/vllm-openai:v0.27.1
+        imagePullPolicy: IfNotPresent
+        name: vllm
+        ports:
+        - containerPort: 8000
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: '4'
+            memory: 32Gi
+            nvidia.com/gpu: '1'
+          requests:
+            cpu: '4'
+            memory: 32Gi
+            nvidia.com/gpu: '1'
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /root/.cache/huggingface
+          name: hf-cache
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - hostPath:
+          path: /var/lib/hf-cache
+          type: DirectoryOrCreate
+        name: hf-cache
